@@ -62,36 +62,37 @@ void updateServerData();
 #define NUM_LEDS_0    60
 #define NUM_LEDS_1    60
 #define LED_TYPE      NEOPIXEL
-uint8_t BRIGHTNESS =  64;
+uint8_t BRIGHTNESS =  200;
 unsigned long ledUpdateDelay = 10;
+
+int LED_RELAY_PIN = 5;
+
 
 CRGB leds0[NUM_LEDS_0];
 CRGB leds1[NUM_LEDS_1];
 
-std::vector<int> dataPins  = {LED_PIN_0, LED_PIN_1};
-std::vector<int> ledCounts = {NUM_LEDS_0, NUM_LEDS_1};
-
-LEDHandler ledHndlr(dataPins, ledCounts);
+std::vector<int> dataPins  = {LED_PIN_0};//, LED_PIN_1};
+std::vector<int> ledCounts = {NUM_LEDS_0};//, NUM_LEDS_1};
 
 
 int PORT = 80;
 String WIFI_NAME = "BigDaddy&Plankton";
 String WIFI_PWD = "zmBW2dS:zxmtz16";
-String DNS_NAME = "d1miniirrigation";
+String DNS_NAME = "d1miniledstrip0";
 
 std::shared_ptr<String> SERVER_MDNS = std::make_shared<String>("hippo");//"raspberrypi";
 std::shared_ptr<String> ARDUINO_ID  = std::make_shared<String>("ARDUINO_LED_STRIP");
 std::shared_ptr<String> SERVER_PORT = std::make_shared<String>("8080");
 
-int LED_RELAY_PIN = 13;
 
-std::shared_ptr<int> UNIX_DAY_OFFSET = std::make_shared<int>(3);
-std::shared_ptr<unsigned long> UNIX_TIME = std::make_shared<unsigned long>(0);
+std::shared_ptr<int>           UNIX_DAY_OFFSET = std::make_shared<int>(3);
+std::shared_ptr<unsigned long> UNIX_TIME       = std::make_shared<unsigned long>(0);
 
 
 MDNSResponder mdns;
 std::shared_ptr<ESP8266WebServer> server = std::make_shared<ESP8266WebServer>(PORT);
 
+std::shared_ptr<LEDHandler> ledHndlr;
 ScheduleHandler       scheduleHndlr(server, SERVER_MDNS, SERVER_PORT, ARDUINO_ID, UNIX_TIME, UNIX_DAY_OFFSET, LED_RELAY_PIN, "/ledstrip");
 UnixTimeHandler       unixTimeHndlr(server, SERVER_MDNS, SERVER_PORT, ARDUINO_ID, UNIX_TIME, UNIX_DAY_OFFSET);
 DigitalSensorHandler  movementSensors;
@@ -105,6 +106,7 @@ std::vector<int> MOVEMENT_SENSOR_PINS = {13,15};
 void setup() {
   Serial.begin(115200);
   Serial.println("\nESP started");
+  
   WiFi.begin(WIFI_NAME.c_str(), WIFI_PWD.c_str());
 
   Serial.print("connecting to WiFi...");
@@ -144,7 +146,7 @@ void setup() {
   server->begin();
 
   //------------------------------------------------------------
-
+    
   // set default movementSensor:
   for(const auto movmntSnsrPin: MOVEMENT_SENSOR_PINS)
   {
@@ -154,11 +156,15 @@ void setup() {
   pinMode(LED_RELAY_PIN, OUTPUT);
 //  digitalWrite(LED_RELAY_PIN, HIGH);
 
-  const auto& ledColors = ledHndlr.getColors();
 
+  ledHndlr = std::make_shared<LEDHandler>( dataPins, ledCounts, server );
+  ledHndlr->setServerURLs();
+  const auto& ledColors = ledHndlr->getColors();
+  
   FastLED.addLeds<LED_TYPE, LED_PIN_0>(ledColors[0], NUM_LEDS_0);
-  FastLED.addLeds<LED_TYPE, LED_PIN_1>(ledColors[1], NUM_LEDS_1);
+//  FastLED.addLeds<LED_TYPE, LED_PIN_1>(ledColors[1], NUM_LEDS_1);
   FastLED.setBrightness(  BRIGHTNESS );
+  FastLED.show();
 
   //------------------------------------------------------------
 
@@ -166,24 +172,27 @@ void setup() {
   
   Serial.println("setup/innit data by requesting server-data");
   Serial.println("requesting UNIX-time from server");
-
+ 
 //  updateServerData();
 
   //------------------------------------------------------------
 }
 
-
-void loop() {
-//  server->handleClient();
+void loop(){
+  server->handleClient();
   
-  ledHndlr.update(ledUpdateDelay);
+  checkMovementSensors();
 
-//  unixTimeHndlr.updateUnixTime();
-//  scheduleHndlr.update();
+  if( scheduleHndlr.scheduler.isRunning(*UNIX_TIME) ){
+    ledHndlr->update(ledUpdateDelay);
+  }
 
-//  updateServerData();
+  unixTimeHndlr.updateUnixTime();
+  scheduleHndlr.update();
 
-//  delay(10);
+  updateServerData();
+
+//  delay(1000);
   delay(ledUpdateDelay);
 }
 
@@ -191,7 +200,7 @@ void loop() {
 
 void activateLEDs()
 {
-  scheduleHndlr.addTask( new OneTimerTask(*UNIX_TIME, static_cast<int>(LED_SENSOR_ACTIVATION_DURATION)) );
+  scheduleHndlr.scheduler.start( *UNIX_TIME + LED_SENSOR_ACTIVATION_DURATION );
 }
 
 //----------------------------------------------------------------------------
@@ -200,10 +209,11 @@ void updateServerData()
 {
   unixTimeHndlr.requestDailyTimeFromServerIfNotAlreadyDone();
 
-  if(unixTimeHndlr.successfullyReceivedUnixtTimeToday())
-  {
-    scheduleHndlr.requestDailyScheduleFromServerIfNotAlreadyDone();
-  }
+  // led strip shall not request server plan
+//  if(unixTimeHndlr.successfullyReceivedUnixtTimeToday())
+//  {
+//    scheduleHndlr.requestDailyScheduleFromServerIfNotAlreadyDone();
+//  }
 }
 
 void receiveAndSetServerIpAndPort()
@@ -241,12 +251,7 @@ void checkMovementSensors()
 {
   if(movementSensors.anySensorActive())
   {
-    // to avoid drowning scheduleHndlr:
-    auto ledsLightingFor = scheduleHndlr.scheduler.isRunningFor(*UNIX_TIME);
-    if( ledsLightingFor < static_cast<unsigned long>(LED_SENSOR_ACTIVATION_DURATION * 0.5) )
-    {
-      activateLEDs();
-    }
+    activateLEDs();
   }
 }
 
