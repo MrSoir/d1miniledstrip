@@ -62,7 +62,7 @@ void updateServerData();
 #define NUM_LEDS_0    60
 #define NUM_LEDS_1    60
 #define LED_TYPE      NEOPIXEL
-uint8_t BRIGHTNESS =  200;
+uint8_t BRIGHTNESS =  255;
 unsigned long ledUpdateDelay = 10;
 
 int LED_RELAY_PIN = 5;
@@ -71,16 +71,16 @@ int LED_RELAY_PIN = 5;
 CRGB leds0[NUM_LEDS_0];
 CRGB leds1[NUM_LEDS_1];
 
-std::vector<int> dataPins  = {LED_PIN_0};//, LED_PIN_1};
-std::vector<int> ledCounts = {NUM_LEDS_0};//, NUM_LEDS_1};
+std::vector<int> dataPins  = {LED_PIN_0, LED_PIN_1};
+std::vector<int> ledCounts = {NUM_LEDS_0, NUM_LEDS_1};
 
 
 int PORT = 80;
-String WIFI_NAME = "BigDaddy&Plankton";
-String WIFI_PWD = "zmBW2dS:zxmtz16";
+String WIFI_NAME = "YOUR_WIFI_SSID";
+String WIFI_PWD = "YOUR_WIFI_PASSWORD";
 String DNS_NAME = "d1miniledstrip0";
 
-std::shared_ptr<String> SERVER_MDNS = std::make_shared<String>("hippo");//"raspberrypi";
+std::shared_ptr<String> SERVER_MDNS = std::make_shared<String>("raspberrypi");
 std::shared_ptr<String> ARDUINO_ID  = std::make_shared<String>("ARDUINO_LED_STRIP");
 std::shared_ptr<String> SERVER_PORT = std::make_shared<String>("8080");
 
@@ -100,6 +100,7 @@ DigitalSensorHandler  movementSensors;
 unsigned long LED_SENSOR_ACTIVATION_DURATION = 5 * 60;
 
 std::vector<int> MOVEMENT_SENSOR_PINS = {13,15};
+bool MOVEMENT_SENSORS_ACTIVATED = true;
 
 //------------------main functions----------------------------
 
@@ -137,8 +138,11 @@ void setup() {
     server->send(200, "text/plain", "ESP landing page!");
   });
 
-  server->on("/setServerIPAndPort",    receiveAndSetServerIpAndPort);
-  server->on("/setSensorActivationDuration", receiveAndSetSensorActivationDuration);
+  server->on("/setServerIPAndPort",           receiveAndSetServerIpAndPort);
+  server->on("/setSensorActivationDuration",  receiveAndSetSensorActivationDuration);
+  server->on("/setBrightness",                receiveAndSetBrightness);
+  server->on("/activateMotionSensors",        activateMotionSensors);
+  server->on("/deactivateMotionSensors",      deactivateMotionSensors);
   
   // example usage in browser:
 //  http://192.168.2.110/receiveAndSetServerIpAndPort?ip=raspberrypi&ip=8080
@@ -162,7 +166,7 @@ void setup() {
   const auto& ledColors = ledHndlr->getColors();
   
   FastLED.addLeds<LED_TYPE, LED_PIN_0>(ledColors[0], NUM_LEDS_0);
-//  FastLED.addLeds<LED_TYPE, LED_PIN_1>(ledColors[1], NUM_LEDS_1);
+  FastLED.addLeds<LED_TYPE, LED_PIN_1>(ledColors[1], NUM_LEDS_1);
   FastLED.setBrightness(  BRIGHTNESS );
   FastLED.show();
 
@@ -180,8 +184,11 @@ void setup() {
 
 void loop(){
   server->handleClient();
-  
-  checkMovementSensors();
+
+  if(MOVEMENT_SENSORS_ACTIVATED)
+  {
+    checkMovementSensors();
+  }
 
   if( scheduleHndlr.scheduler.isRunning(*UNIX_TIME) ){
     ledHndlr->update(ledUpdateDelay);
@@ -242,6 +249,39 @@ void receiveAndSetServerIpAndPort()
     Serial.println(msg);
     server->send(400, "text/plain", msg);
   }
+}
+
+void receiveAndSetBrightness()
+{
+  float brghtnsFlt = server->arg("brightness").toFloat();
+  setBrightness(brghtnsFlt);
+}
+void setBrightness(float brghtnsFlt)
+{
+  uint8_t brghtns = 5 + static_cast<uint8_t>((255.0f - 5.0f) * brghtnsFlt);
+  
+  BRIGHTNESS = brghtns;
+  FastLED.setBrightness( BRIGHTNESS );
+  FastLED.show();
+  
+  String msg("successfully received animation -> brightness set to: ");
+  msg.concat(brghtnsFlt);
+  msg.concat("!");
+  Serial.println(msg);
+  server->send(200, "text/plain", msg);
+}
+
+void activateMotionSensors()
+{
+  MOVEMENT_SENSORS_ACTIVATED = true;
+  String msg("activated motion sensors!");
+  server->send(200, "text/plain", msg);
+}
+void deactivateMotionSensors()
+{
+  MOVEMENT_SENSORS_ACTIVATED = false;
+  String msg("deactivated motion sensors!");
+  server->send(200, "text/plain", msg);
 }
 
 
