@@ -76,8 +76,8 @@ std::vector<int> ledCounts = {NUM_LEDS_0, NUM_LEDS_1};
 
 
 int PORT = 80;
-String WIFI_NAME = "YOUR_WIFI_SSID";
-String WIFI_PWD = "YOUR_WIFI_PASSWORD";
+String WIFI_NAME = "WIFI_SSID";
+String WIFI_PWD = "WIFI_PASSWORD";
 String DNS_NAME = "d1miniledstrip0";
 
 std::shared_ptr<String> SERVER_MDNS = std::make_shared<String>("raspberrypi");
